@@ -33,7 +33,7 @@ func main() {
     })
 
     // GET / — получить все задачи
-    e.GET("/", func(c echo.Context) error {
+    e.GET("/tasks", func(c echo.Context) error {
         var result []Task
         for _, task := range tasks {
             result = append(result, task)
