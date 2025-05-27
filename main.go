@@ -1,7 +1,9 @@
 package main
+
 import (
 	"net/http"
 	"strconv"
+
 	"github.com/labstack/echo/v4"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -10,11 +12,12 @@ import (
 
 // Task — модель задачи
 type Task struct {
-	ID      uint           `json:"id" gorm:"primaryKey"`
-	Task    string         `json:"task"`
-	IsDone  bool           `json:"is_done"`
-	Deleted gorm.DeletedAt `gorm:"index"` // мягкое удаление
+	ID        uint           `json:"id" gorm:"primaryKey"`
+	Task      string         `json:"task"`
+	IsDone    bool           `json:"is_done"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 }
+
 
 var db *gorm.DB
 
@@ -22,7 +25,7 @@ func main() {
 	var err error
 
 	// Подключение к PostgreSQL
-	dsn := "host=localhost user=postgres password=password dbname=tasks_db port=5432 sslmode=disable"
+	dsn := "host=localhost user=postgres password=123456 dbname=tasks_db port=5432 sslmode=disable"
 	db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
 		NamingStrategy: schema.NamingStrategy{
 			SingularTable: true, // Отключить множественные имена таблиц
@@ -59,9 +62,12 @@ func createTask(c echo.Context) error {
 // Получение всех задач
 func getAllTasks(c echo.Context) error {
 	var tasks []Task
-	db.Find(&tasks)
+	if err := db.Where("deleted_at IS NULL").Find(&tasks).Error; err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Ошибка при получении задач"})
+	}
 	return c.JSON(http.StatusOK, tasks)
 }
+
 
 // Обновление задачи по ID
 func updateTask(c echo.Context) error {
