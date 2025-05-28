@@ -18,7 +18,6 @@ type Task struct {
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
-
 var db *gorm.DB
 
 func main() {
@@ -67,7 +66,6 @@ func getAllTasks(c echo.Context) error {
 	}
 	return c.JSON(http.StatusOK, tasks)
 }
-
 
 // Обновление задачи по ID
 func updateTask(c echo.Context) error {
