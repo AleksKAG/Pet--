@@ -1,57 +1,102 @@
 package main
 
 import (
-    "net/http"
-    "github.com/labstack/echo/v4"
+	"net/http"
+	"strconv"
+
+	"github.com/labstack/echo/v4"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	"gorm.io/gorm/schema"
 )
 
-// Глобальная переменная для хранения task
-var task string
-
-// Структура для чтения JSON из POST-запроса
-type RequestBodyTask struct {
-    Task string `json:"task"`
+// Task — модель задачи
+type Task struct {
+	ID        uint           `json:"id" gorm:"primaryKey"`
+	Task      string         `json:"task"`
+	IsDone    bool           `json:"is_done"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 }
+
+var db *gorm.DB
 
 func main() {
-     e := echo.New() // Создаем новый экземпляр Echo
+	var err error
 
+	// Подключение к PostgreSQL
+	dsn := "host=localhost user=postgres password=123456 dbname=tasks_db port=5432 sslmode=disable"
+	db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
+		NamingStrategy: schema.NamingStrategy{
+			SingularTable: true, // Отключить множественные имена таблиц
+		},
+	})
+	if err != nil {
+		panic("не удалось подключиться к PostgreSQL")
+	}
 
+	// Миграция таблицы
+	db.AutoMigrate(&Task{})
 
-    // Регистрируем маршруты
-    e.POST("/task", handleTask)  // POST /task для получения нового task
+	// Echo router
+	e := echo.New()
 
+	e.POST("/tasks", createTask)
+	e.GET("/tasks", getAllTasks)
+	e.PATCH("/tasks/:id", updateTask)
+	e.DELETE("/tasks/:id", deleteTask)
 
-    e.GET("/", handleRoot)       // GET / возвращает "hello {task}"
-
-    // Запускаем сервер на порту 8080
-    e.Logger.Fatal(e.Start(":8080"))
+	e.Logger.Fatal(e.Start(":8080"))
 }
 
-// Обработчик POST-запроса на /task
-func handleTask(c echo.Context) error {
-    // Создаем переменную структуры, в которую будет декодирован JSON
-    var req RequestBodyTask
-
-    // Парсим JSON из тела запроса в переменную req
-    if err := c.Bind(&req); err != nil {
-        return c.JSON(http.StatusBadRequest, map[string]string{
-            "error": "Некорректный JSON",
-        })
-    }
-
-    // Сохраняем значение task в глобальную переменную
-    task = req.Task
-
-    // Отправляем ответ клиенту
-    return c.JSON(http.StatusOK, map[string]string{
-        "message": "Task сохранён",
-        "task":    task,
-    })
+// Создание новой задачи
+func createTask(c echo.Context) error {
+	var task Task
+	if err := c.Bind(&task); err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Некорректный JSON"})
+	}
+	db.Create(&task)
+	return c.JSON(http.StatusCreated, task)
 }
 
-// Обработчик GET-запроса на /
-func handleRoot(c echo.Context) error {
-    // Возвращаем сохранённый task
-    return c.String(http.StatusOK, "hello " + task + "!")
+// Получение всех задач
+func getAllTasks(c echo.Context) error {
+	var tasks []Task
+	if err := db.Where("deleted_at IS NULL").Find(&tasks).Error; err != nil {
+		return c.JSON(http.StatusInternalServerError, echo.Map{"error": "Ошибка при получении задач"})
+	}
+	return c.JSON(http.StatusOK, tasks)
+}
+
+// Обновление задачи по ID
+func updateTask(c echo.Context) error {
+	id, _ := strconv.Atoi(c.Param("id"))
+	var task Task
+
+	if err := db.First(&task, id).Error; err != nil {
+		return c.JSON(http.StatusNotFound, echo.Map{"error": "Задача не найдена"})
+	}
+
+	var input Task
+	if err := c.Bind(&input); err != nil {
+		return c.JSON(http.StatusBadRequest, echo.Map{"error": "Ошибка JSON"})
+	}
+
+	task.Task = input.Task
+	task.IsDone = input.IsDone
+	db.Save(&task)
+
+	return c.JSON(http.StatusOK, task)
+}
+
+// Удаление задачи (мягкое)
+func deleteTask(c echo.Context) error {
+	id, _ := strconv.Atoi(c.Param("id"))
+	var task Task
+
+	if err := db.First(&task, id).Error; err != nil {
+		return c.JSON(http.StatusNotFound, echo.Map{"error": "Задача не найдена"})
+	}
+
+	db.Delete(&task)
+	return c.NoContent(http.StatusNoContent)
 }
